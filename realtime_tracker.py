@@ -2,6 +2,17 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import argparse
+import sys
+import os
+
+# 在打包后的无控制台应用中，sys.stdout 和 sys.stderr 可能为 None
+# 这会导致 argparse 在打印帮助或错误信息时崩溃。
+# 因此，我们将它们重定向到 os.devnull。
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
+
 
 # --- 参数解析 ---
 parser = argparse.ArgumentParser(description='Real-time eye tracking and blink detection.')
@@ -23,12 +34,12 @@ if args.video:
     cap = cv2.VideoCapture(args.video)
     if not cap.isOpened():
         print(f"Error: Cannot open video file {args.video}")
-        exit()
+        sys.exit()
 else:
     cap = cv2.VideoCapture(0) # 使用默认摄像头
     if not cap.isOpened():
         print("Error: Cannot open webcam.")
-        exit()
+        sys.exit()
 
 # --- EAR 计算函数 ---
 def calculate_ear(eye_landmarks, image_shape):
@@ -52,6 +63,8 @@ if fps == 0: # 摄像头可能返回0
 consecutive_closed_frames = 0
 total_sleep_frames = 0
 is_sleeping = False
+consecutive_read_fails = 0
+MAX_READ_FAILS = 100 # Max consecutive read fails before exiting
 
 # --- 主处理循环 ---
 while cap.isOpened():
@@ -61,7 +74,15 @@ while cap.isOpened():
             print("End of video.")
             break
         else:
-            continue
+            consecutive_read_fails += 1
+            if consecutive_read_fails > MAX_READ_FAILS:
+                print(f"Error: Failed to read from webcam for {MAX_READ_FAILS} consecutive frames. Exiting.")
+                break
+            else:
+                continue
+    else:
+        # Reset fail counter on successful read
+        consecutive_read_fails = 0
 
     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     h, w, _ = image.shape
