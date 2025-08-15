@@ -83,6 +83,8 @@ class App:
 
         # --- Variables ---
         self.video_source = tk.StringVar(value="Webcam")
+        self.camera_list = self.get_available_cameras()
+        self.selected_camera = tk.StringVar(value=self.camera_list[0] if self.camera_list else "")
         self.video_path = ""
         self.ear_threshold = tk.DoubleVar(value=0.2)
         self.sleep_threshold = tk.DoubleVar(value=1.0)
@@ -113,10 +115,20 @@ class App:
         # --- Controls ---
         source_frame = ttk.LabelFrame(control_panel, text="Video Source", padding="10")
         source_frame.pack(fill=tk.X, pady=5)
-        ttk.Radiobutton(source_frame, text="Webcam", variable=self.video_source, value="Webcam", command=self.on_source_change).pack(anchor=tk.W)
-        ttk.Radiobutton(source_frame, text="Video File", variable=self.video_source, value="File", command=self.on_source_change).pack(anchor=tk.W)
-        self.browse_button = ttk.Button(source_frame, text="Browse...", command=self.browse_file, state=tk.DISABLED)
-        self.browse_button.pack(pady=5)
+        # Webcam selection
+        webcam_frame = ttk.Frame(source_frame)
+        webcam_frame.pack(fill=tk.X)
+        ttk.Radiobutton(webcam_frame, text="Webcam", variable=self.video_source, value="Webcam", command=self.on_source_change).pack(side=tk.LEFT, anchor=tk.W)
+        self.camera_dropdown = ttk.Combobox(webcam_frame, textvariable=self.selected_camera, values=self.camera_list, state='readonly', width=15)
+        if self.camera_list:
+            self.camera_dropdown.pack(side=tk.LEFT, padx=5)
+        
+        # Video file selection
+        file_frame = ttk.Frame(source_frame)
+        file_frame.pack(fill=tk.X, pady=(5,0))
+        ttk.Radiobutton(file_frame, text="Video File", variable=self.video_source, value="File", command=self.on_source_change).pack(side=tk.LEFT, anchor=tk.W)
+        self.browse_button = ttk.Button(file_frame, text="Browse...", command=self.browse_file, state=tk.DISABLED)
+        self.browse_button.pack(side=tk.LEFT, padx=5)
 
         tracking_frame = ttk.LabelFrame(control_panel, text="Control", padding="10")
         tracking_frame.pack(fill=tk.X, pady=5)
@@ -157,7 +169,22 @@ class App:
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def on_source_change(self):
-        self.browse_button.config(state=tk.NORMAL if self.video_source.get() == "File" else tk.DISABLED)
+        is_file = self.video_source.get() == "File"
+        self.browse_button.config(state=tk.NORMAL if is_file else tk.DISABLED)
+        self.camera_dropdown.config(state=tk.NORMAL if not is_file else tk.DISABLED)
+
+    def get_available_cameras(self):
+        """Check for available video cameras."""
+        index = 0
+        arr = []
+        while True:
+            cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
+            if not cap.isOpened():
+                break
+            arr.append(f"Camera {index}")
+            cap.release()
+            index += 1
+        return arr
 
     def browse_file(self):
         path = filedialog.askopenfilename(filetypes=[("Video files", "*.mp4 *.avi *.mov")])
@@ -217,9 +244,20 @@ class App:
         self.root.after(100, self.update_gui)
 
     def video_loop(self):
-        cap = cv2.VideoCapture(self.video_path if self.video_source.get() == "File" else 0)
+        source = 0
+        if self.video_source.get() == "File":
+            source = self.video_path
+        else:
+            try:
+                # Extract index from "Camera X"
+                source = int(self.selected_camera.get().split()[-1])
+            except (IndexError, ValueError):
+                self.image_queue.put(("ERROR", "Invalid camera selected"))
+                return
+
+        cap = cv2.VideoCapture(source)
         if not cap.isOpened():
-            self.image_queue.put(("ERROR", "Cannot open video source"))
+            self.image_queue.put(("ERROR", f"Cannot open source: {source}"))
             return
 
         consecutive_closed_frames = 0
