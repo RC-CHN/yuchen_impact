@@ -9,6 +9,8 @@ import queue
 from PIL import Image, ImageTk
 import sqlite3
 from datetime import datetime
+import os
+import sys
 
 # --- Core Tracker Logic ---
 class EyeTracker:
@@ -170,7 +172,20 @@ class App:
         self.sleep_label.config(text=f"{float(value):.1f}s")
 
     def setup_database(self):
-        self.db_conn = sqlite3.connect('sleep_log.db', check_same_thread=False)
+        # Determine the base path, works for both script and bundled exe
+        if getattr(sys, 'frozen', False):
+            # If the application is run as a bundle, the PyInstaller bootloader
+            # extends the sys module by a flag frozen=True and sets the app
+            # path into variable _MEIPASS'.
+            base_path = os.path.dirname(sys.executable)
+        else:
+            # If run as a script, the base path is the script's directory
+            base_path = os.path.dirname(os.path.abspath(__file__))
+        
+        db_path = os.path.join(base_path, 'sleep_log.db')
+        print(f"Database path: {db_path}") # For debugging
+        
+        self.db_conn = sqlite3.connect(db_path, check_same_thread=False)
         cursor = self.db_conn.cursor()
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS sleep_events (
@@ -334,10 +349,16 @@ class App:
             self.tracking_thread.join(timeout=1)
         
         if self.longest_sleep_snapshot is not None:
+            if getattr(sys, 'frozen', False):
+                base_path = os.path.dirname(sys.executable)
+            else:
+                base_path = os.path.dirname(os.path.abspath(__file__))
+            
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"sleep_snapshot_{timestamp}.jpg"
-            cv2.imwrite(filename, self.longest_sleep_snapshot)
-            print(f"Saved snapshot to {filename}")
+            snapshot_path = os.path.join(base_path, filename)
+            cv2.imwrite(snapshot_path, self.longest_sleep_snapshot)
+            print(f"Saved snapshot to {snapshot_path}")
 
         if self.db_conn: self.db_conn.close()
         self.tracker.close()
