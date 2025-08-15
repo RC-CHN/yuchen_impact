@@ -4,3 +4,4 @@ build/
 data/WIN_20250805_10_02_37_Pro.mp4
 RealtimeEyeTracker.spec
 dist/
+sleep_log.db

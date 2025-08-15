@@ -89,6 +89,7 @@ class App:
         self.tracker = EyeTracker()
         self.tracking_thread = None
         self.stop_tracking = False
+        self.is_paused = False
         self.image_queue = queue.Queue(maxsize=2)
         
         self.db_conn = None
@@ -118,9 +119,11 @@ class App:
         tracking_frame = ttk.LabelFrame(control_panel, text="Control", padding="10")
         tracking_frame.pack(fill=tk.X, pady=5)
         self.start_button = ttk.Button(tracking_frame, text="Start Tracking", command=self.start_tracking)
-        self.start_button.pack(fill=tk.X, pady=5)
+        self.start_button.pack(fill=tk.X, pady=(5, 2))
+        self.pause_button = ttk.Button(tracking_frame, text="Pause", command=self.toggle_pause, state=tk.DISABLED)
+        self.pause_button.pack(fill=tk.X, pady=2)
         self.stop_button = ttk.Button(tracking_frame, text="Stop Tracking", command=self.stop_tracking_func, state=tk.DISABLED)
-        self.stop_button.pack(fill=tk.X, pady=5)
+        self.stop_button.pack(fill=tk.X, pady=(2, 5))
 
         settings_frame = ttk.LabelFrame(control_panel, text="Settings", padding="10")
         settings_frame.pack(fill=tk.X, pady=5)
@@ -189,7 +192,9 @@ class App:
             self.status_label.config(text="Please select a video file.")
             return
         self.stop_tracking = False
+        self.is_paused = False
         self.start_button.config(state=tk.DISABLED)
+        self.pause_button.config(state=tk.NORMAL, text="Pause")
         self.stop_button.config(state=tk.NORMAL)
         self.status_label.config(text="Starting...")
         self.tracking_thread = threading.Thread(target=self.video_loop, daemon=True)
@@ -210,6 +215,11 @@ class App:
         fps = cap.get(cv2.CAP_PROP_FPS) or 30
 
         while not self.stop_tracking:
+            while self.is_paused and not self.stop_tracking:
+                time.sleep(0.1)
+            
+            if self.stop_tracking: break
+
             success, frame = cap.read()
             if not success: break
             
@@ -263,7 +273,6 @@ class App:
                 self.stop_tracking_func()
                 return
             
-            # THIS IS THE FIX: Check for the specific error tuple format
             if isinstance(data, tuple) and len(data) == 2 and data[0] == "ERROR":
                 self.status_label.config(text=data[1])
                 self.stop_tracking_func()
@@ -296,18 +305,30 @@ class App:
             self.root.after(30, self.update_gui)
 
     def stop_tracking_func(self):
+        self.is_paused = False
         self.stop_tracking = True
         if self.tracking_thread and self.tracking_thread.is_alive():
             self.tracking_thread.join(timeout=1)
         
         self.start_button.config(state=tk.NORMAL)
+        self.pause_button.config(state=tk.DISABLED, text="Pause")
         self.stop_button.config(state=tk.DISABLED)
         self.status_label.config(text="Idle")
         self.ear_value_label.config(text="N/A")
         self.sleep_time_label.config(text="0.00s")
         self.video_panel.config(image='', background='black')
 
+    def toggle_pause(self):
+        self.is_paused = not self.is_paused
+        if self.is_paused:
+            self.pause_button.config(text="Resume")
+            self.status_label.config(text="Paused")
+        else:
+            self.pause_button.config(text="Pause")
+            self.status_label.config(text="Tracking...")
+
     def on_closing(self):
+        self.is_paused = False
         self.stop_tracking = True
         if self.tracking_thread and self.tracking_thread.is_alive():
             self.tracking_thread.join(timeout=1)
